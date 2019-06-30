@@ -22,7 +22,7 @@ def set_utility_data(option):
                 validated_value = validate(new_value,   getattr(previous_values, _option, None))
                 set_counters_data(validated_value, option, user_id)
             except (TypeError, ValueError) as e:
-                if new_value == 'Главное меню':
+                if new_value == 'Меню':
                     msg = '>>'
                     return function(update, context, CHOOSING, msg)
                 msg = 'Неправильное значение, вроде. Попробуй еще.'
