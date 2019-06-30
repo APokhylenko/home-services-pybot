@@ -30,8 +30,8 @@ def start(update, context):
     if not user.exists():
         user.commit()
 
-        # if user.username == RENTER_USERNAME:
-        models.Counters.load_previous_counters_data(user)
+        if user.username == RENTER_USERNAME:
+            models.Counters.load_previous_counters_data(user)
 
     return CHOOSING
 
