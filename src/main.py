@@ -5,11 +5,11 @@ from telegram import ReplyKeyboardMarkup, ParseMode
 from telegram.ext import (Updater, CommandHandler, MessageHandler, Filters,
                           ConversationHandler)
 
-import models
-from constants import *
-from decorator import set_utility_data
-from mail import send_mail
-from settings import TELEGRAM_TOKEN, RENTER_USERNAME
+from src import models
+from src.constants import *
+from src.decorator import set_utility_data
+from src.mail import send_mail
+from src.settings import TELEGRAM_TOKEN, RENTER_USERNAME
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     level=logging.INFO)

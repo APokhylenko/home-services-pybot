@@ -19,6 +19,5 @@ coverage.xml
 .pytest_cache/
 
 .env
-counters_data.py
 pybot.db
-data/
+src/data/counters_data.py

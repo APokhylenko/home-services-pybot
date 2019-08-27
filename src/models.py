@@ -1,4 +1,3 @@
-from _operator import or_
 from datetime import datetime, timedelta
 
 from sqlalchemy import Column, Integer, String, Boolean, exists, DateTime, func, desc, create_engine, ForeignKey, Float
@@ -6,7 +5,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 
 # Create an engine which the Session will use for connections.
-from settings import DB_URL, RENTER_USERNAME
+from src.settings import DB_URL, RENTER_USERNAME
 
 engine = create_engine(DB_URL)
 
@@ -195,7 +194,7 @@ class Counters(Base):
     def load_previous_counters_data(user):
         """Try to load previous counters data."""
         try:
-            from data.counters_data import DATA
+            from src.data.counters_data import DATA
             for d in DATA:
                 counters = Counters(**d)
                 counters.user_id = user.user_id
