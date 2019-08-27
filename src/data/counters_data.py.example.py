@@ -16,3 +16,9 @@ DATA = [
         'updated': datetime(year=2019, month=6, day=1)
     }
 ]
+
+LAST_PAYMENT_DATA = {
+    'month_number': 5,
+    'year': 2015,
+    'is_paid': True,
+}

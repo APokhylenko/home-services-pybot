@@ -1,31 +1,34 @@
+import calendar
 import logging
 
 import requests as r
+from tabulate import tabulate
 from telegram import ReplyKeyboardMarkup, ParseMode
-from telegram.ext import (Updater, CommandHandler, MessageHandler, Filters,
-                          ConversationHandler)
+from telegram.ext import (Updater, MessageHandler, Filters,
+                          ConversationHandler, CommandHandler)
 
-from src import models
-from src.constants import *
-from src.decorator import set_utility_data
-from src.mail import send_mail
-from src.settings import TELEGRAM_TOKEN, RENTER_USERNAME
+import models
+from constants import *
+from decorator import set_utility_data
+from mail import send_mail
+from settings import TELEGRAM_TOKEN, RENTER_USERNAME, OWNER_USERNAME
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    level=logging.INFO)
+                    level=logging.DEBUG)
 
 logger = logging.getLogger(__name__)
 
 reply_keyboard = [['Счетчики', 'Счет'],
                   ['Шутка', 'Тарифы'],
-                  ['Done']]
+                  ['Оплачено', 'Пока']]
 markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
 
 
 def start(update, context):
-    reply_text = "Здарова."
+    reply_text = "Привет)"
     update.message.reply_text(reply_text, reply_markup=markup)
-    user = models.User(update.effective_user)
+    telegram_user = update.effective_user
+    user = models.User(telegram_user)
 
     if not user.exists():
         user.commit()
@@ -33,6 +36,8 @@ def start(update, context):
         if user.username == RENTER_USERNAME:
             models.Counters.load_previous_counters_data(user)
 
+    if telegram_user.username == OWNER_USERNAME:
+        models.FlatPayment.generate_flat_payments()
     return CHOOSING
 
 
@@ -105,7 +110,7 @@ def counters(update, context):
     msg = counters_template(counters_last)
 
     counters_keyboard = [['Новые показания', 'Меню']]
-    counters_markup = ReplyKeyboardMarkup(counters_keyboard, one_time_keyboard=True)
+    counters_markup = ReplyKeyboardMarkup(counters_keyboard, one_time_keyboard=False)
     update.message.reply_text(msg, parse_mode=ParseMode.HTML, reply_markup=counters_markup)
 
     return CHOOSING
@@ -168,7 +173,7 @@ def prices(update, context):
 
 
 def done(update, context):
-    update.message.reply_text("Until next time!")
+    update.message.reply_text("Ну, все. Пиши...)")
     return CHOOSING
 
 
@@ -190,14 +195,68 @@ def main_menu(update, context):
     return CHOOSING
 
 
+def other_msgs_handler(update, context):
+    """Handle messages that don't have regex handler."""
+    update.message.reply_text('Я бы поговорила, но я на работе))', reply_markup=markup)
+    return CHOOSING
+
+
+def generate_paid_months_template():
+    """Return beatiful table with paid months."""
+    months_paid = models.FlatPayment.get_this_year_payments()
+    headers = ['Paid', 'Month', 'Year']
+    data = []
+    for m in months_paid:
+        is_paid = '✓' if m.is_paid else '×'
+        month = [is_paid, calendar.month_name[m.month_number], m.year]
+        data.append(month)
+    return tabulate(data, headers=headers, tablefmt='simple', colalign=("center",))
+
+
+def get_payments_calendar(update, context):
+    """Returns keyboard with 12 month with list of months that were paid.."""
+    username = update.effective_user.username
+    months_paid_string = generate_paid_months_template()
+
+    if not username == OWNER_USERNAME:
+        update.message.reply_text(months_paid_string, parse_mode=ParseMode.HTML, reply_markup=markup)
+        return CHOOSING
+
+    months_list = list(filter(None, calendar.month_name))
+    months_keyboard = [months_list[i:i + 3] for i in range(0, len(list(months_list)), 3)]
+    counters_markup = ReplyKeyboardMarkup(months_keyboard, one_time_keyboard=True)
+    update.message.reply_text(months_paid_string, parse_mode=ParseMode.HTML, reply_markup=counters_markup)
+
+    return CALENDAR_STATE
+
+
+def set_unset_month_paid(update, context):
+    """Check is_paid for selected month."""
+    if not update.effective_user.username == OWNER_USERNAME:
+        update.message.reply_text('Упс, так нельзя.', reply_markup=markup)
+        return CHOOSING
+
+    month_name = update.message.text
+    month_number = list(calendar.month_name).index(month_name)
+    models.FlatPayment.mark_as_paid_or_unpaid(month_number)
+    months_paid_string = generate_paid_months_template()
+    update.message.reply_text(months_paid_string, reply_markup=markup)
+
+    return CHOOSING
+
+
 def error(update, context):
     """Log Errors caused by Updates."""
     logger.warning('Update "%s" caused error "%s"', update, error)
 
 
 def conversation_handler():
+    """Decides how to answer on user messages."""
+    default_regex_commands = 'Счетчики|Тарифы|Счет|Шутка|Новые показания|Меню|Пока|payments'
     return ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
+        entry_points=[
+            MessageHandler(Filters.regex('.'), start)
+        ],
 
         states={
             CHOOSING: [MessageHandler(Filters.regex('Счетчики'),
@@ -212,14 +271,22 @@ def conversation_handler():
                                       new_counters_data),
                        MessageHandler(Filters.regex('Меню'),
                                       main_menu),
+                       MessageHandler(Filters.regex('Оплачено'),
+                                      get_payments_calendar),
+                       MessageHandler(Filters.regex(f'^(?!.*({default_regex_commands}))'),
+                                      other_msgs_handler)
                        ],
 
             ELECTRICITY_STATE: [MessageHandler(Filters.text, set_electricity)],
             GAS_STATE: [MessageHandler(Filters.text, set_gas)],
+            GAS_COUNTER_PHOTO: [],
             WATER_STATE: [MessageHandler(Filters.text, set_water)],
+            CALENDAR_STATE: [
+                MessageHandler(Filters.text, set_unset_month_paid)
+            ]
         },
 
-        fallbacks=[MessageHandler(Filters.regex('Done'), done)],
+        fallbacks=[MessageHandler(Filters.regex('Пока'), done)],
         name="my_conversation",
         persistent=False
     )

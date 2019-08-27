@@ -1,11 +1,12 @@
 from datetime import datetime, timedelta
 
-from sqlalchemy import Column, Integer, String, Boolean, exists, DateTime, func, desc, create_engine, ForeignKey, Float
+from sqlalchemy import Column, Integer, String, Boolean, exists, DateTime, func, desc, create_engine, ForeignKey, Float, \
+    UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 
 # Create an engine which the Session will use for connections.
-from src.settings import DB_URL, RENTER_USERNAME
+from settings import DB_URL, RENTER_USERNAME
 
 engine = create_engine(DB_URL)
 
@@ -107,6 +108,10 @@ class Rates(Base):
             price = self.flat
         return price
 
+    @staticmethod
+    def diff_month(d1, d2):
+        return (d1.year - d2.year) * 12 + d1.month - d2.month
+
     def calculate_total_price(self, flat_price, exchange_rate, user_id):
         """Calculate total price for the flat with bills."""
         electricity, gas, water = Counters.get_last_values_difference(user_id)
@@ -117,13 +122,80 @@ class Rates(Base):
         if electricity >= 100:
             electricity_before_100 = 100
             electricity_after_100 = electricity - 100
-        flat = flat_price * exchange_rate
+        last_payment_date = FlatPayment.get_last_payment_date()
+        months_after_last_payment = Rates.diff_month(datetime.now(), last_payment_date) or 1
+        flat = flat_price * exchange_rate * abs(months_after_last_payment)
         electricity = electricity_before_100 * self.electricity_before_100 + electricity_after_100 * self.\
             electricity_after_100
         gas *= self.gas
         water *= self.water
         total = flat + electricity + gas + water + self.sdpt + self.garbage_removal
         return total, electricity, gas, water
+
+    def commit(self):
+        session.add(self)
+        session.commit()
+
+
+class FlatPayment(Base):
+    """Save month and year of the payment status."""
+
+    __tablename__ = "flat_payments"
+
+    id = Column(Integer, primary_key=True)
+    month_number = Column(Integer, default=datetime.now().month)
+    year = Column(Integer, default=datetime.now().year)
+    is_paid = Column(Boolean, default=False)
+    __table_args__ = (UniqueConstraint('year', 'month_number', name='_year_month_uc'),)
+
+    def __repr__(self):
+        return f"Paid {self.is_paid} {self.month_number}.{self.year}"
+
+    @staticmethod
+    def generate_flat_payments():
+        """Try to load previous payments data."""
+        try:
+            from data.counters_data import LAST_PAYMENT_DATA as LPD
+            paid_months = session.query(FlatPayment).filter_by(year=LPD['year']).count()
+            if paid_months >= LPD['month_number']:
+                return
+            months = range(1, LPD['month_number'] + 1)
+            flat_payments = []
+            for m in months:
+                data = {'month_number': m, 'year': LPD['year'], 'is_paid': LPD['is_paid']}
+                flat_payments.append(FlatPayment(**data))
+
+            session.bulk_save_objects(flat_payments)
+            session.commit()
+        except ImportError:
+            print('Error. No data found.')
+
+    @staticmethod
+    def get_this_year_payments():
+        return session.query(FlatPayment).filter_by(year=datetime.now().year, is_paid=True)
+
+    @staticmethod
+    def mark_as_paid_or_unpaid(month_number):
+        """Set is_paid to opposite."""
+        month_data = {'month_number': month_number, 'year': datetime.now().year}
+        instance = session.query(FlatPayment).filter_by(**month_data).first()
+        if instance:
+            instance.is_paid = not instance.is_paid
+            FlatPayment.commit(instance)
+        else:
+            month_data['is_paid'] = True
+            instance = FlatPayment(**month_data)
+            FlatPayment.commit(instance)
+        pass
+
+    @staticmethod
+    def get_last_payment_date():
+        """Return number of the month when last payment was done."""
+        last_payment = session.query(FlatPayment).filter_by(is_paid=True).\
+            order_by(FlatPayment.year.desc(), FlatPayment.month_number.desc()).first()
+        if not last_payment:
+            raise ValueError
+        return datetime(year=last_payment.year, month=last_payment.month_number, day=1)
 
     def commit(self):
         session.add(self)
@@ -195,10 +267,13 @@ class Counters(Base):
         """Try to load previous counters data."""
         try:
             from src.data.counters_data import DATA
+            counters_list = []
             for d in DATA:
                 counters = Counters(**d)
                 counters.user_id = user.user_id
-                counters.commit()
+                counters_list.append(counters)
+            session.bulk_save_objects(counters_list)
+            session.commit()
         except ImportError:
             print('No data found.')
 

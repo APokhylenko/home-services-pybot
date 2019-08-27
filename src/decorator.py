@@ -1,7 +1,7 @@
 from functools import wraps
 
-from src import models
-from src.constants import ELECTRICITY_STATE, GAS_STATE, WATER_STATE, ELECTRICITY, CHOOSING, WATER, GAS
+import models
+from constants import ELECTRICITY_STATE, GAS_STATE, WATER_STATE, ELECTRICITY, CHOOSING, WATER, GAS
 
 
 def set_utility_data(option):
