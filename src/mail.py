@@ -1,12 +1,12 @@
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 
+from helpers import calculate_bill
 from settings import FROM_EMAIL, TO_EMAIL, SENDGRID_API_KEY, SENDGRID_TEMPLATE_ID
 
 
 def send_mail(user_id, counters_last):
     """Send email via Sendgrid."""
-    from main import calculate_bill
     rates, flat_price, exchange_rate, flat_service_prices = calculate_bill(user_id)
     total, electricity, gas, water = flat_service_prices
 
@@ -20,6 +20,7 @@ def send_mail(user_id, counters_last):
     template_data = {
         'electricity_counter': counters_last.electricity,
         'gas_counter': counters_last.gas,
+        'gas_counter_photo': counters_last.gas_counter_photo_url,
         'water_counter': counters_last.water,
         'flat_price': flat_price,
         'exchange_rate': exchange_rate,

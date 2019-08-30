@@ -1,7 +1,11 @@
 from functools import wraps
 
 import models
-from constants import ELECTRICITY_STATE, GAS_STATE, WATER_STATE, ELECTRICITY, CHOOSING, WATER, GAS
+from constants import ELECTRICITY_STATE, GAS_STATE, WATER_STATE, ELECTRICITY, CHOOSING, WATER, GAS, \
+    GAS_COUNTER_PHOTO_STATE, GAS_COUNTER_PHOTO
+from helpers import validate_new_counters_data
+
+states = [ELECTRICITY_STATE, WATER_STATE, GAS_STATE, GAS_COUNTER_PHOTO_STATE]
 
 
 def set_utility_data(option):
@@ -14,42 +18,55 @@ def set_utility_data(option):
             update, context = args
             new_value = update.message.text
             user_id = update.effective_user.id
-            states = [ELECTRICITY_STATE, GAS_STATE, WATER_STATE]
             current_state, msg = get_state(_option)
-
-            try:
-                previous_values = models.Counters.get_last_user_counters(user_id)
-                validated_value = validate(new_value,   getattr(previous_values, _option, None))
-                set_counters_data(validated_value, option, user_id)
-            except (TypeError, ValueError) as e:
-                if new_value == 'Меню':
-                    msg = '>>'
-                    return function(update, context, CHOOSING, msg)
-                msg = 'Неправильное значение, вроде. Попробуй еще.'
-                return function(update, context, current_state, msg)
-
-            state = get_next_state(states, current_state)
-
-            return function(update, context, state, msg)
+            return process_counters_data(*args, _option, new_value, user_id, function, current_state, msg)
         return wrapper
     return decorator
 
 
-def get_state(option, current_state=None, msg='Ушло'):
+def get_state(option, current_state=None, next_msg='Отлично. Теперь можно получить счет :)'):
     """Return current state."""
     if option == ELECTRICITY:
         current_state = ELECTRICITY_STATE
-        msg = 'Газ:'
+        next_msg = 'Вода:'
     elif option == GAS:
         current_state = GAS_STATE
-        msg = 'Вода:'
+        next_msg = 'фото газового счетчика :)'
     elif option == WATER:
         current_state = WATER_STATE
+        next_msg = 'Газ:'
+    elif option == GAS_COUNTER_PHOTO:
+        current_state = GAS_COUNTER_PHOTO_STATE
 
-    return current_state, msg
+    return current_state, next_msg
 
 
-def get_next_state(states, current_state):
+def process_counters_data(*args):
+    """Handle new counters data."""
+    update, context, _option, new_value, user_id, function, current_state, msg = args
+
+    try:
+        if current_state is not GAS_COUNTER_PHOTO_STATE:
+            previous_counter_data = models.Counters.get_last_user_counters(user_id)
+            previous_value = getattr(previous_counter_data, _option, None)
+            validated_value = validate_new_counters_data(new_value, previous_value)
+        else:
+            received_photo = update.message.photo[0]
+            img = received_photo.get_file()
+            validated_value = img.file_path
+        set_counters_data(validated_value, _option, user_id)
+    except (TypeError, ValueError) as e:
+        if new_value == 'Меню':
+            msg = '>>'
+            return function(update, context, CHOOSING, msg)
+        msg = 'Что-то не так. Возможно значение меньше предыдущего. Попробуй еще.'
+        return function(update, context, current_state, msg)
+    else:
+        state = get_next_state(current_state)
+        return function(update, context, state, msg)
+
+
+def get_next_state(current_state):
     """Return next state."""
     states_index = states.index(current_state)
 
@@ -59,16 +76,6 @@ def get_next_state(states, current_state):
         state = states[states_index + 1]
 
     return state
-
-
-def validate(value, old_value):
-    """Validate value."""
-    value = int(value)
-
-    if not old_value or (old_value and old_value <= value):
-        return value
-    else:
-        raise ValueError
 
 
 def set_counters_data(validated_value, option, user_id):

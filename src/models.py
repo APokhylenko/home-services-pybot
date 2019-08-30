@@ -23,6 +23,7 @@ class User(Base):
     __tablename__ = "users"
 
     user_id = Column(Integer, primary_key=True)
+    chat_id = Column(Integer)
     first_name = Column(String, nullable=False)
     last_name = Column(String)
     username = Column(String)
@@ -30,13 +31,13 @@ class User(Base):
     is_renter = Column(Boolean, default=False)
     is_muted = Column(Boolean, default=False)
 
-    def __init__(self, user, is_admin=False, is_muted=False):
+    def __init__(self, user, is_muted=False, chat_id=None):
         self.user_id = user.id
         self.first_name = user.first_name
         self.last_name = user.last_name
         self.username = user.username
-        self.is_admin = is_admin
         self.is_muted = is_muted
+        self.chat_id = chat_id
 
     def exists(self):
         return session.query(exists().where(
@@ -212,6 +213,7 @@ class Counters(Base):
     gas = Column(Integer)
     water = Column(Integer)
     user_id = Column(Integer, ForeignKey('users.user_id'))
+    gas_counter_photo_url = Column(String)
     created = Column(DateTime(timezone=True), server_default=func.now())
     updated = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -266,7 +268,7 @@ class Counters(Base):
     def load_previous_counters_data(user):
         """Try to load previous counters data."""
         try:
-            from src.data.counters_data import DATA
+            from data.counters_data import DATA
             counters_list = []
             for d in DATA:
                 counters = Counters(**d)
