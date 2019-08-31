@@ -231,6 +231,7 @@ class FlatPayment(Base):
     @staticmethod
     def get_last_payment_date():
         """Return number of the month when last payment was done."""
+        # TODO: this should be private
         last_payment = session.query(FlatPayment).filter_by(is_paid=True). \
             order_by(FlatPayment.year.desc(), FlatPayment.month_number.desc()).first()
         if not last_payment:

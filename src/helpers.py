@@ -75,8 +75,7 @@ def bill_template(user_id, rates):
 
 def bill_email_template(user_id, counters_last, rates):
     """Generate bill for sendgrid dynamic template."""
-    flat_price, exchange_rate, flat_service_prices = calculate_bill(user_id, rates)
-    total, electricity, gas, water = flat_service_prices
+    flat_price, exchange_rate, bills = calculate_bill(user_id, rates)
 
     template_data = {
         'electricity_counter': counters_last.electricity,
@@ -86,11 +85,11 @@ def bill_email_template(user_id, counters_last, rates):
         'flat_price': flat_price,
         'exchange_rate': exchange_rate,
         'sdpt_garbage': round(rates.sdpt + rates.garbage_removal, 2),
-        'electricity': electricity,
-        'gas': gas,
-        'water': round(water, 1),
+        'electricity': bills['electricity'],
+        'gas': bills['gas'],
+        'water': round(bills['water'], 1),
         'heating': 'n/a',
-        'total': round(total)
+        'total': round(bills['total'])
     }
     for k, v in template_data.items():
         template_data[k] = str(v)
