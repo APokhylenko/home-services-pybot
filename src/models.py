@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from sqlalchemy import Column, Integer, String, Boolean, exists, DateTime, func, desc, create_engine, ForeignKey, Float, \
     UniqueConstraint
@@ -6,9 +6,10 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 
 # Create an engine which the Session will use for connections.
+from helpers import get_heating_bill
 from settings import DB_URL, RENTER_USERNAME
 
-engine = create_engine(DB_URL)
+engine = create_engine(DB_URL, connect_args={'check_same_thread': False})
 
 # Create session
 Session = sessionmaker(bind=engine)
@@ -43,8 +44,13 @@ class User(Base):
         return session.query(exists().where(
             User.user_id == self.user_id)).scalar()
 
+    @staticmethod
+    def get_user_by_username(username):
+        return session.query(User).filter(User.username == username).first()
+
     def commit(self):
         if self.username == RENTER_USERNAME:
+            Counters.load_previous_counters_data(self)
             self.is_renter = True
         session.add(self)
         session.commit()
@@ -113,25 +119,58 @@ class Rates(Base):
     def diff_month(d1, d2):
         return (d1.year - d2.year) * 12 + d1.month - d2.month
 
-    def calculate_total_price(self, flat_price, exchange_rate, user_id):
-        """Calculate total price for the flat with bills."""
-        electricity, gas, water = Counters.get_last_values_difference(user_id)
-
+    @staticmethod
+    def calculate_electricity(electricity, electricity_before_100_rate, electricity_after_100_rate):
+        """0-100 electricity has different price than 100+."""
         electricity_before_100 = electricity
         electricity_after_100 = 0
 
         if electricity >= 100:
             electricity_before_100 = 100
             electricity_after_100 = electricity - 100
+        electricity = electricity_before_100 * electricity_before_100_rate + electricity_after_100 * \
+                      electricity_after_100_rate
+        return electricity
+
+    @staticmethod
+    def calculate_flat_bill(flat_price, exchange_rate):
+        """Check when last payment was done. Get diff, then multiply diff * flat price * exchange rate."""
         last_payment_date = FlatPayment.get_last_payment_date()
         months_after_last_payment = Rates.diff_month(datetime.now(), last_payment_date) or 1
         flat = flat_price * exchange_rate * abs(months_after_last_payment)
-        electricity = electricity_before_100 * self.electricity_before_100 + electricity_after_100 * self.\
-            electricity_after_100
-        gas *= self.gas
-        water *= self.water
-        total = flat + electricity + gas + water + self.sdpt + self.garbage_removal
-        return total, electricity, gas, water
+        return flat
+
+    @staticmethod
+    def calculate_sdpt_garbage_removal(last_counters_date, sdpt_rate, garbage_removal_rate):
+        """Check date of the last counters data. Get diff, then multiply diff * rates.
+        By default we assume that 1 month passed."""
+        months_after_last_payment = 1
+        if last_counters_date:
+            months_after_last_payment = Rates.diff_month(datetime.now(), last_counters_date) or 1
+        sdpt = months_after_last_payment * sdpt_rate
+        garbage_removal = months_after_last_payment * garbage_removal_rate
+        return sdpt, garbage_removal
+
+    def calculate_total_price(self, flat_price, exchange_rate, user_id):
+        """Calculate total price for the flat with bills for the water/gas/energy..."""
+        electricity_difference, gas_difference, water_difference, last_counters_created_date = \
+            Counters.get_last_values_difference(user_id)
+        bills = dict()
+        bills['electricity'] = self.calculate_electricity(electricity_difference,
+                                                          self.electricity_before_100,
+                                                          self.electricity_after_100)
+        bills['flat'] = self.calculate_flat_bill(flat_price, exchange_rate)
+
+        bills['gas'] = gas_difference * self.gas
+        bills['water'] = water_difference * self.water
+        bills['sdpt'], bills['garbage_removal'] = self.calculate_sdpt_garbage_removal(last_counters_created_date,
+                                                                                      self.sdpt, self.garbage_removal)
+        bills['heating'] = get_heating_bill()
+        bills['total'] = bills['flat'] + bills['electricity'] + bills['gas'] + bills['water'] + bills['sdpt'] + \
+                         bills['garbage_removal'] + bills['heating']
+        bills['last_counters_created_date'] = last_counters_created_date
+
+        return bills
 
     def commit(self):
         session.add(self)
@@ -192,7 +231,7 @@ class FlatPayment(Base):
     @staticmethod
     def get_last_payment_date():
         """Return number of the month when last payment was done."""
-        last_payment = session.query(FlatPayment).filter_by(is_paid=True).\
+        last_payment = session.query(FlatPayment).filter_by(is_paid=True). \
             order_by(FlatPayment.year.desc(), FlatPayment.month_number.desc()).first()
         if not last_payment:
             raise ValueError
@@ -243,12 +282,13 @@ class Counters(Base):
         """Calculate difference between old and new counters data."""
         counters_last, counters_previous = counters
         electricity = gas = water = 0
+        counters_last_created = counters_last.created if counters_last else None
 
         if counters_last and counters_previous:
             electricity = counters_last.electricity - counters_previous.electricity
             gas = counters_last.gas - counters_previous.gas
             water = counters_last.water - counters_previous.water
-        return electricity, gas, water
+        return electricity, gas, water, counters_last_created
 
     @staticmethod
     def get_last_values_difference(user_id):
@@ -259,9 +299,9 @@ class Counters(Base):
     @staticmethod
     def get_current_month_counters_data(user_id):
         """Returns counters data for current month."""
-        ten_days_before = datetime.now() - timedelta(days=10)
+        first_day_of_month = datetime.today().replace(day=1)
         return session.query(Counters).filter(
-            Counters.created >= ten_days_before,
+            Counters.created >= first_day_of_month,
             user_id == user_id).first()
 
     @staticmethod

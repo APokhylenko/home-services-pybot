@@ -1,11 +1,24 @@
 from functools import wraps
 
+from telegram import ChatAction
+
 import models
 from constants import ELECTRICITY_STATE, GAS_STATE, WATER_STATE, ELECTRICITY, CHOOSING, WATER, GAS, \
     GAS_COUNTER_PHOTO_STATE, GAS_COUNTER_PHOTO
 from helpers import validate_new_counters_data
 
 states = [ELECTRICITY_STATE, WATER_STATE, GAS_STATE, GAS_COUNTER_PHOTO_STATE]
+
+
+def send_typing_action(func):
+    """Sends typing action while processing func command."""
+
+    @wraps(func)
+    def command_func(update, context, *args, **kwargs):
+        context.bot.send_chat_action(chat_id=update.effective_message.chat_id, action=ChatAction.TYPING)
+        return func(update, context, *args, **kwargs)
+
+    return command_func
 
 
 def set_utility_data(option):

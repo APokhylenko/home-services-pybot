@@ -9,13 +9,14 @@ from telegram.ext import (Updater, MessageHandler, Filters,
 
 import models
 from constants import *
-from decorator import set_utility_data
-from helpers import build_menu, rates_template, bill_template, validate_new_counters_data
-from mail import send_mail
+from decorators import set_utility_data, send_typing_action
+from helpers import build_menu, rates_template, bill_template, validate_new_counters_data, bill_email_template
+from mail import send_counters_email
+from scheduler import scheduler, ask_for_counters_data, mark_as_paid
 from settings import TELEGRAM_TOKEN, RENTER_USERNAME, OWNER_USERNAME
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    level=logging.DEBUG)
+                    level=logging.INFO)
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +34,6 @@ def start(update, context):
 
     if not user.exists():
         user.commit()
-
-        if user.username == RENTER_USERNAME:
-            models.Counters.load_previous_counters_data(user)
     elif user.chat_id is not update.effective_chat.id:
         user.chat_id = update.effective_chat.id
         user.commit()
@@ -54,7 +52,7 @@ def counters_template(counters_last):
     water = f"<b>Вода:</b> {counters_last.water} \n"
     date = counters_last.updated or counters_last.created
 
-    return f"<b>На {date.strftime('%d.%m.%Y')}:</b> \n{electricty}{gas}{water}"
+    return f"<i>На {date.strftime('%d.%m.%Y')}:</i> \n{electricty}{gas}{water}"
 
 
 def counters(update, context):
@@ -72,7 +70,6 @@ def counters(update, context):
 def new_counters_data(update, context):
     """Set counters data."""
     update.message.reply_text("Электричество:")
-
     return ELECTRICITY_STATE
 
 
@@ -161,16 +158,20 @@ def save_gas_counter_photo(update, context, state=None, msg=''):
         msg = counters_template(counters_last)
 
         if user.username == RENTER_USERNAME:
-            send_mail(user.id, counters_last)
+            rates = models.Rates.get_default_rates()
+            email_template = bill_email_template(user.id, counters_last, rates)
+            send_counters_email(email_template)
         update.message.reply_text(msg, parse_mode=ParseMode.HTML, reply_markup=markup)
     else:
         update.message.reply_text(msg)
     return state
 
 
+@send_typing_action
 def bill(update, context):
     """Return bill based on latest counters data."""
-    msg = bill_template(update.effective_user.id)
+    rates = models.Rates.get_default_rates()
+    msg = bill_template(update.effective_user.id, rates)
     update.message.reply_text(msg, parse_mode=ParseMode.HTML, reply_markup=markup)
 
 
@@ -325,6 +326,12 @@ def main():
     updater.start_polling()
     updater.idle()
 
+    scheduler.add_job(ask_for_counters_data, 'cron', day=1, hour=7)
+    scheduler.add_job(ask_for_counters_data, 'cron', day=3, hour=17)
+    scheduler.add_job(ask_for_counters_data, 'cron', day=5, hour=7)
+    scheduler.add_job(mark_as_paid, 'cron', day=15, hour=7)
+
 
 if __name__ == '__main__':
+    scheduler.start()
     main()
