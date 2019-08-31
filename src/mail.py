@@ -1,7 +1,11 @@
+import logging
+
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 
 from settings import FROM_EMAIL, TO_EMAIL, SENDGRID_API_KEY, SENDGRID_TEMPLATE_ID
+
+logger = logging.getLogger(__name__)
 
 
 def send_email(subject, body):
@@ -15,7 +19,7 @@ def send_email(subject, body):
         sg = SendGridAPIClient(SENDGRID_API_KEY)
         sg.send(message)
     except Exception as e:
-        print(str(e))
+        logger.exception(e)
 
 
 def send_counters_email(template_data):
@@ -33,4 +37,4 @@ def send_counters_email(template_data):
         sg = SendGridAPIClient(SENDGRID_API_KEY)
         sg.send(message)
     except Exception as e:
-        print(str(e))
+        logger.exception(e)
