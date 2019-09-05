@@ -64,7 +64,7 @@ def process_counters_data(*args):
             previous_value = getattr(previous_counter_data, _option, None)
             validated_value = validate_new_counters_data(new_value, previous_value)
         else:
-            received_photo = update.message.photo[0]
+            received_photo = update.message.photo[-1]
             img = received_photo.get_file()
             validated_value = img.file_path
         set_counters_data(validated_value, _option, user_id)
