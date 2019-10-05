@@ -191,7 +191,37 @@ def prices(update, context):
     """Return current prices for 1 water/electricity/gas."""
     rates = models.Rates.get_default_rates()
     msg = rates_template(rates)
-    update.message.reply_text(msg, parse_mode=ParseMode.HTML, reply_markup=markup)
+
+    if update.effective_user.username == OWNER_USERNAME:
+        reply_kb = [['Меню', 'Изменить тарифы']]
+        rates_markup = ReplyKeyboardMarkup(reply_kb, one_time_keyboard=True)
+        update.message.reply_text(msg, parse_mode=ParseMode.HTML, reply_markup=rates_markup)
+        return UPDATE_RATES
+    else:
+        update.message.reply_text(msg, parse_mode=ParseMode.HTML, reply_markup=markup)
+    return CHOOSING
+
+
+def edit_rates(update, context):
+    """Handle rates update."""
+    if ':' not in update.message.text:
+        rates = models.Rates()
+        fields = rates.__dict__
+        del fields['_sa_instance_state']
+        field_keys = [k for k in fields.keys()]
+        msg = "   ".join(field_keys)
+        update.message.reply_text(msg)
+        return UPDATE_RATES
+
+    key, value = update.message.text.split(':')
+
+    try:
+        key = key.strip()
+        value = float(value)
+    except TypeError:
+        update.message.reply_text('Ошибка конвертации в float.')
+        return UPDATE_RATES
+    models.Rates.update_default_rates(**{key: value})
     return CHOOSING
 
 
@@ -303,7 +333,13 @@ def conversation_handler():
                 MessageHandler(Filters.text,
                                edit_counters_data),
                 CallbackQueryHandler(edit_counters_data_cb),
-            ]
+            ],
+            UPDATE_RATES: [
+                MessageHandler(Filters.regex('Меню'),
+                               main_menu),
+                MessageHandler(Filters.text,
+                               edit_rates),
+            ],
         },
 
         fallbacks=[MessageHandler(Filters.regex('Пока'), done)],

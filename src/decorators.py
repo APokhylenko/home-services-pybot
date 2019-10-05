@@ -72,7 +72,7 @@ def process_counters_data(*args):
         if new_value == 'Меню':
             msg = '>>'
             return function(update, context, CHOOSING, msg)
-        msg = 'Что-то не так. Возможно значение меньше предыдущего. Попробуй еще.'
+        msg = 'Ошибка. Возможно значение меньше предыдущего.'
         return function(update, context, current_state, msg)
     else:
         state = get_next_state(current_state)

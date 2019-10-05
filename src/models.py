@@ -95,6 +95,16 @@ class Rates(Base):
         return default_rates
 
     @staticmethod
+    def update_default_rates(**data):
+        """Update default rates."""
+        default_rates = Rates.get_default_rates()
+        for k, v in data.items():
+            if k in default_rates.__dict__:
+                setattr(default_rates, k, v)
+        default_rates.commit()
+        return default_rates
+
+    @staticmethod
     def get_default_rates():
         """Returns instance with default rates."""
         default_rates = session.query(Rates).get(1)
@@ -107,7 +117,7 @@ class Rates(Base):
         """Returns flat price depending on season."""
         now = datetime.now()
         current_month = now.strftime('%m')
-        summer_months = ['06', '07', '08', '09']
+        summer_months = ['06', '07', '08']
 
         if current_month in summer_months:
             price = self.flat_summer
