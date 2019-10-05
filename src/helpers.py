@@ -88,7 +88,7 @@ def bill_email_template(user_id, counters_last, rates):
         'electricity': bills['electricity'],
         'gas': bills['gas'],
         'water': round(bills['water'], 1),
-        'heating': 'n/a',
+        'heating': get_heating_bill(),
         'total': round(bills['total'])
     }
     for k, v in template_data.items():
