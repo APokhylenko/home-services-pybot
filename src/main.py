@@ -251,7 +251,7 @@ def generate_paid_months_template():
         is_paid = '✓' if m.is_paid else '×'
         month = [is_paid, calendar.month_name[m.month_number], m.year]
         data.append(month)
-    return tabulate(data, headers=headers, tablefmt='simple', colalign=("center",))
+    return tabulate(data or [['n', 'o', 'n', 'e']], headers=headers, tablefmt='simple', colalign=("center",))
 
 
 def get_payments_calendar(update, context):
